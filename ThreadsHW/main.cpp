@@ -10,6 +10,14 @@ void matrix_print_test() {
 	std::cout << m;
 
 
+	m.compute_ranks();
+
+	std::cout << m;
+
+	m.solve();
+
+	std::cout << m;
+
 }
 
 int main()

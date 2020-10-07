@@ -1,50 +1,77 @@
 #include "Matrix.h"
 
+#include <vector>
 #include <iostream> 
 #include <iomanip>
 #include <assert.h>
 
 
-
-
 Matrix::Matrix()
 {
-	//generate space on heap
-	matrix_data = new double[MATRIX_DIM_SQ];
-	vector_data = new double[MATRIX_DIM];
-
-
-	//fill matrix with random data
-	for (size_t i = 0; i < MATRIX_DIM_SQ; i++)
-		matrix_data[i] = distribution(gen);
-
-	for (size_t i = 0; i < MATRIX_DIM; i++)
-		vector_data[i] = distribution(gen);
+	for (size_t x = 0; x < MATRIX_DIM; x++)
+	{
+		for (size_t y = 0; y < MATRIX_DIM; y++)
+			data[x][y] = distribution(gen);
+		data[x][MATRIX_DIM] = distribution(gen);
+	}
 }
 
-Matrix::Matrix(int test)
+Matrix::Matrix(int testset)
 {
 	assert(MATRIX_DIM == 3);
 
-	//generate space on heap
-	matrix_data = new double[MATRIX_DIM_SQ];
-	vector_data = new double[MATRIX_DIM];
+	//set zero
+	double data_0[] = { 1,2,-4, 2,1, -6, 4, -1, -12 };
+	double x_0[] = { 5,8,13 };
 
-	double data[] = { 1,2,-4, 2,1, -6, 4, -1, -12 };
-	double x[] = { 5,8,13 };
+	//set one
+	double data_1[] = { 1,0,0, 0,1, 0, 0, 0, -0 };
+	double x_1[] = { 5,8,13 };
 
-	//fill matrix with random data
-	for (size_t i = 0; i < MATRIX_DIM_SQ; i++)
-		matrix_data[i] = data[i];
+	//uzlabina2.aspone.cz/KralfrobeniovaVeta.aspx
+	double data_2[] = { 1,2,5, 0,1, 5, 0, 0, 1 };
+	double x_2[] = { 4,2,1 };
 
-	for (size_t i = 0; i < MATRIX_DIM; i++)
-		vector_data[i] = x[i];
-}
+	double data_3[] = { 1,8,1, 0,5, 3, 0, 0, 0 };
+	double x_3[] = { 10,2,4 };
 
-Matrix::~Matrix()
-{
-	delete [] matrix_data;
-	delete [] vector_data;
+	double data_4[] = { 1,4,5, 0,1, 2, 0, 0, 0 };
+	double x_4[] = { 5,3,0 };
+
+	double * _data;
+	double * _x;
+
+	switch (testset) {
+	case 0:
+		_data = data_0;
+		_x = x_0;
+		break;
+	case 1:
+		_data = data_1;
+		_x = x_1;
+		break;
+	case 2:
+		_data = data_2;
+		_x = x_2;
+		break;
+	case 3:
+		_data = data_3;
+		_x = x_3;
+		break;
+	case 4:
+		_data = data_4;
+		_x = x_4;
+		break;
+	default:
+		throw std::exception("test set out of range");
+	}
+
+	for (size_t x = 0; x < MATRIX_DIM; x++)
+	{
+		for (size_t y = 0; y < MATRIX_DIM; y++)
+			data[x][y] = _data[x * MATRIX_DIM + y];
+		data[x][MATRIX_DIM] = _x[x];
+	}
 }
 
 void Matrix::make_triangle_form()
@@ -52,14 +79,89 @@ void Matrix::make_triangle_form()
 	for (int j = 0; j < MATRIX_DIM; j++) {
 		for (int i = j; i < MATRIX_DIM; i++) {
 			if (i != j) {
-				double b = matrix_data[i * MATRIX_DIM + j] / matrix_data[j * MATRIX_DIM + j];
-				for (int k = 0; k < MATRIX_DIM; k++) {
-					matrix_data[i * MATRIX_DIM + k] = matrix_data[i * MATRIX_DIM + k] - b * matrix_data[j * MATRIX_DIM + k];
+				double b = data[i][j] / data[j][j];
+				for (int k = 0; k < MATRIX_DIM + 1; k++) {
+					data[i][k] = data[i][k] - b * data[j][k];
 				}
-				vector_data[i] = vector_data[i] - b * vector_data[j];
 			}
 		}
 	}
+}
+
+void Matrix::compute_ranks()
+{
+	rank = compute_rank_inner(data, false);
+	rank_extended = compute_rank_inner(data, true);
+	std::cout << "rank: " << rank << std::endl;
+	std::cout << "rank: " << rank_extended << std::endl;
+
+	//one solution  when rank == rank_extended
+	//no  solution  when rank != rank_extended && rank_extended == MATRIX_DIM
+	//inf solutions when rank == rank_extended && rank_extended < MATRIX_DIM
+	if (rank != rank_extended) {
+		type = MatrixSolveType::NONE;
+	}
+	else {
+		type = rank == MATRIX_DIM ? MatrixSolveType::ONE : MatrixSolveType::INF;
+	}
+
+}
+
+void Matrix::solve()
+{
+	if (type == MatrixSolveType::NONE) return;
+	if (type == MatrixSolveType::INF) return;
+
+	//www.tutorialspoint.com/cplusplus-program-to-implement-gauss-jordan-elimination
+	for (int j = 0; j < MATRIX_DIM; j++) {
+		for (int i = 0; i < MATRIX_DIM; i++) {
+			if (i != j) {
+				double b = data[i][j] / data[j][j];
+				for (int k = i; k < MATRIX_DIM + 1; k++) {
+					data[i][k] = data[i][k] - b * data[j][k];
+				}
+			}
+		}
+	}
+
+	for (int x = 0; x < MATRIX_DIM; x++) {
+		solution.push_back(data[x][MATRIX_DIM] / data[x][x]);
+	}
+
+}
+
+int Matrix::compute_rank_inner(mat A, bool extended) {
+	//taken from cp-algorithms.com/linear_algebra/rank-matrix.html
+
+	const double EPS = 1E-9;
+	int n = A.size();
+	int m = A[0].size();
+	if (!extended)
+		m--;
+
+	int rank = 0;
+	std::vector<bool> row_selected(n, false);
+	for (int i = 0; i < m; ++i) {
+		int j;
+		for (j = 0; j < n; ++j) {
+			if (!row_selected[j] && abs(A[j][i]) > EPS)
+				break;
+		}
+
+		if (j != n) {
+			++rank;
+			row_selected[j] = true;
+			for (int p = i + 1; p < m; ++p)
+				A[j][p] /= A[j][i];
+			for (int k = 0; k < n; ++k) {
+				if (k != j && abs(A[k][i]) > EPS) {
+					for (int p = i + 1; p < m; ++p)
+						A[k][p] -= A[j][p] * A[k][i];
+				}
+			}
+		}
+	}
+	return rank;
 }
 
 
@@ -77,8 +179,7 @@ std::ostream & operator<<(std::ostream & stream, const Matrix & matrix)
 		stream << "[";
 		for (size_t y = 0; y < MATRIX_DIM; y++)
 		{
-			int index = x * MATRIX_DIM + y;
-			print_fixed(matrix.matrix_data[index]);
+			print_fixed(matrix.data[x][y]);
 			stream << " ";
 		}
 
@@ -90,7 +191,7 @@ std::ostream & operator<<(std::ostream & stream, const Matrix & matrix)
 		}
 
 
-		print_fixed(matrix.vector_data[x]);
+		print_fixed(matrix.data[x][MATRIX_DIM]);
 		stream << "]" << std::endl;
 
 
