@@ -10,7 +10,10 @@ class Matrix
 {
 public:
 	Matrix();
+	Matrix(int test);
 	~Matrix();
+
+	void make_triangle_form();
 
 	friend std::ostream& operator<< (std::ostream& stream, const Matrix& matrix);
 
