@@ -13,8 +13,8 @@ enum class MatrixSolveType {
 class Matrix
 {
 public:
-	Matrix();
-	Matrix(int test);
+	Matrix(int id);
+	Matrix(int id, int test);
 
 	//step 2
 	void make_triangle_form();
@@ -27,6 +27,10 @@ public:
 
 	friend std::ostream& operator<< (std::ostream& stream, const Matrix& matrix);
 
+public:
+	int id = -1;
+
+
 private:
 	void print_matrix(std::ostream & stream, const mat & matrix) const;
 	void compute_ranks();
@@ -34,7 +38,6 @@ private:
 	
 
 private:
-	int id = -1;
 	//data
 	mat data = mat(MATRIX_DIM, std::vector<double>(MATRIX_DIM + 1));
 	mat data_copy = mat(MATRIX_DIM, std::vector<double>(MATRIX_DIM + 1));

@@ -10,9 +10,6 @@
 #include <filesystem>
 
 namespace {
-	int count_of_matricies = 0;
-	std::mutex count_of_matricies_mutex;
-
 	std::ostream& operator << (std::ostream& os, const MatrixSolveType& type)
 	{
 		switch (type) {
@@ -30,13 +27,8 @@ namespace {
 	}
 }
 
-Matrix::Matrix()
+Matrix::Matrix(int id) : id(id)
 {
-	count_of_matricies_mutex.lock();
-	id = count_of_matricies;
-	id++;
-	count_of_matricies_mutex.unlock();
-
 	for (size_t x = 0; x < MATRIX_DIM; x++)
 	{
 		for (size_t y = 0; y < MATRIX_DIM; y++)
@@ -47,13 +39,8 @@ Matrix::Matrix()
 	data_copy = data;
 }
 
-Matrix::Matrix(int testset)
+Matrix::Matrix(int id, int testset) : id(id)
 {
-	count_of_matricies_mutex.lock();
-	id = count_of_matricies;
-	id++;
-	count_of_matricies_mutex.unlock();
-
 	assert(MATRIX_DIM == 3);
 
 	//set zero
