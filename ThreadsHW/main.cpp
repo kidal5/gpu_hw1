@@ -3,21 +3,10 @@
 #include <iostream>
 
 void matrix_print_test() {
-	Matrix m;
-	std::cout << m << std::endl << std::endl;
-
+	Matrix m(3);
 	m.make_triangle_form();
-	std::cout << m;
-
-
-	m.compute_ranks();
-
-	std::cout << m;
-
 	m.solve();
-
-	std::cout << m;
-
+	m.write_to_file();
 }
 
 int main()

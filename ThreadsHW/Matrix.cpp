@@ -1,23 +1,59 @@
 #include "Matrix.h"
 
+#include <string>
 #include <vector>
+#include <fstream>
 #include <iostream> 
 #include <iomanip>
 #include <assert.h>
+#include <mutex>
+#include <filesystem>
 
+namespace {
+	int count_of_matricies = 0;
+	std::mutex count_of_matricies_mutex;
+
+	std::ostream& operator << (std::ostream& os, const MatrixSolveType& type)
+	{
+		switch (type) {
+		case MatrixSolveType::ONE:
+			os << "ONE";
+			break;
+		case MatrixSolveType::NONE:
+			os << "NONE";
+			break;
+		case MatrixSolveType::INF:
+			os << "INF";
+			break;
+		}
+		return os;
+	}
+}
 
 Matrix::Matrix()
 {
+	count_of_matricies_mutex.lock();
+	id = count_of_matricies;
+	id++;
+	count_of_matricies_mutex.unlock();
+
 	for (size_t x = 0; x < MATRIX_DIM; x++)
 	{
 		for (size_t y = 0; y < MATRIX_DIM; y++)
 			data[x][y] = distribution(gen);
 		data[x][MATRIX_DIM] = distribution(gen);
 	}
+
+	data_copy = data;
 }
 
 Matrix::Matrix(int testset)
 {
+	count_of_matricies_mutex.lock();
+	id = count_of_matricies;
+	id++;
+	count_of_matricies_mutex.unlock();
+
 	assert(MATRIX_DIM == 3);
 
 	//set zero
@@ -72,6 +108,8 @@ Matrix::Matrix(int testset)
 			data[x][y] = _data[x * MATRIX_DIM + y];
 		data[x][MATRIX_DIM] = _x[x];
 	}
+
+	data_copy = data;
 }
 
 void Matrix::make_triangle_form()
@@ -88,12 +126,40 @@ void Matrix::make_triangle_form()
 	}
 }
 
+void Matrix::print_matrix(std::ostream & stream, const mat & matrix) const
+{
+	auto print_fixed = [&stream](double value) {
+		stream << std::setw(8) << std::setfill(' ') << value;
+	};
+
+	stream << std::setprecision(2) << std::fixed;
+
+	for (size_t x = 0; x < MATRIX_DIM; x++)
+	{
+		stream << "[";
+		for (size_t y = 0; y < MATRIX_DIM; y++)
+		{
+			print_fixed(matrix[x][y]);
+			stream << " ";
+		}
+
+		if (MATRIX_DIM / 2 == x) {
+			stream << "] = [";
+		}
+		else {
+			stream << "]   [";
+		}
+
+
+		print_fixed(matrix[x][MATRIX_DIM]);
+		stream << "]" << std::endl;
+	}
+}
+
 void Matrix::compute_ranks()
 {
 	rank = compute_rank_inner(data, false);
 	rank_extended = compute_rank_inner(data, true);
-	std::cout << "rank: " << rank << std::endl;
-	std::cout << "rank: " << rank_extended << std::endl;
 
 	//one solution  when rank == rank_extended
 	//no  solution  when rank != rank_extended && rank_extended == MATRIX_DIM
@@ -109,6 +175,8 @@ void Matrix::compute_ranks()
 
 void Matrix::solve()
 {
+	compute_ranks();
+
 	if (type == MatrixSolveType::NONE) return;
 	if (type == MatrixSolveType::INF) return;
 
@@ -128,6 +196,38 @@ void Matrix::solve()
 		solution.push_back(data[x][MATRIX_DIM] / data[x][x]);
 	}
 
+}
+
+void Matrix::write_to_file()
+{
+	namespace fs = std::experimental::filesystem;
+
+	if (!fs::exists("results")) {
+		fs::create_directory("results");
+	}
+
+	std::string fname = "results/matrix_" + std::to_string(id) + ".txt";
+
+	std::ofstream myfile(fname);
+	myfile << "Source matrix: " << std::endl;
+	print_matrix(myfile, data_copy);
+	myfile << std::endl;
+
+	myfile << "Rank of A: " << rank << std::endl;
+	myfile << "Rank of AB: " << rank_extended << std::endl;
+
+	myfile << "Solution type: " << type << std::endl;
+
+	if (type == MatrixSolveType::ONE) {
+		myfile << "Solution: [";
+		for (const auto & value : solution) {
+			myfile << std::setw(8) << std::setfill(' ') << value;
+			myfile << ", ";
+		}
+		myfile << "]";
+	}
+
+	myfile.close();
 }
 
 int Matrix::compute_rank_inner(mat A, bool extended) {
@@ -168,34 +268,6 @@ int Matrix::compute_rank_inner(mat A, bool extended) {
 
 std::ostream & operator<<(std::ostream & stream, const Matrix & matrix)
 {
-	auto print_fixed = [&stream](double value) {
-		stream << std::setw(8) << std::setfill(' ') << value;
-	};
-
-	stream << std::setprecision(2) << std::fixed;
-
-	for (size_t x = 0; x < MATRIX_DIM; x++)
-	{
-		stream << "[";
-		for (size_t y = 0; y < MATRIX_DIM; y++)
-		{
-			print_fixed(matrix.data[x][y]);
-			stream << " ";
-		}
-
-		if (MATRIX_DIM / 2 == x) {
-			stream << "] = [";
-		}
-		else {
-			stream << "]   [";
-		}
-
-
-		print_fixed(matrix.data[x][MATRIX_DIM]);
-		stream << "]" << std::endl;
-
-
-	}
-
+	matrix.print_matrix(stream, matrix.data);
 	return stream;
 }
