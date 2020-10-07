@@ -67,11 +67,7 @@ void Matrix::make_triangle_form()
 std::ostream & operator<<(std::ostream & stream, const Matrix & matrix)
 {
 	auto print_fixed = [&stream](double value) {
-		if (value > 0)
-			stream << " ";
-		if (value > -10 && value < 10)
-			stream << " ";
-		stream << value;
+		stream << std::setw(8) << std::setfill(' ') << value;
 	};
 
 	stream << std::setprecision(2) << std::fixed;

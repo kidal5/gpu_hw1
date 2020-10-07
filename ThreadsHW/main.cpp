@@ -3,7 +3,7 @@
 #include <iostream>
 
 void matrix_print_test() {
-	Matrix m(10);
+	Matrix m;
 	std::cout << m << std::endl << std::endl;
 
 	m.make_triangle_form();
