@@ -1,6 +1,7 @@
 
 #include "Matrix.h"
 
+#include <filesystem>
 #include <assert.h>
 #include <iostream>
 #include <thread>
@@ -16,7 +17,7 @@ std::mutex cout_mutex;
 Matrix * stage_one_data = nullptr;
 std::mutex stage_one_data_protector;
 std::condition_variable stage_one_data_change;
-bool stage_one_should_end;
+bool stage_one_should_end = false;
 
 void stage_one_thread() {
 
@@ -44,7 +45,7 @@ void stage_one_thread() {
 	stage_one_data_change.notify_all();
 	{
 		std::lock_guard<std::mutex> cout(cout_mutex);
-		std::cout << "Stage one: Thread ended" << std::endl;
+		std::cout << "Stage one: Thread ended." << std::endl;
 		std::cout << std::endl;
 	}
 }
@@ -54,13 +55,14 @@ Matrix * stage_two_inner_buffer[STAGE2_BUFFER_SIZE];
 std::mutex stage_two_inner_buffer_protector;
 std::condition_variable stage_two_inner_buffer_empty; //aka is some free space
 std::condition_variable stage_two_inner_buffer_full; //aka is some job to be done
-bool stage_two_should_end = false;
+bool stage_two_inner_should_end = false;
 
 int stage_two_public_buffer_count = 0;
 Matrix * stage_two_public_buffer[STAGE2_PUBLIC_BUFFER_SIZE];
 std::mutex stage_two_public_buffer_protector;
 std::condition_variable stage_two_public_buffer_empty; //aka is some free space
 std::condition_variable stage_two_public_buffer_full; //aka is some job to be done
+bool stage_two_public_should_end = false;
 
 void stage_two_worker_thread() {
 
@@ -70,7 +72,7 @@ void stage_two_worker_thread() {
 		//wait for task
 		//wait for buffer_empty in
 		std::unique_lock<std::mutex> lk_full(stage_two_inner_buffer_protector);
-		stage_two_inner_buffer_full.wait(lk_full, [] {return stage_two_inner_buffer_count > 0 || stage_two_should_end; });
+		stage_two_inner_buffer_full.wait(lk_full, [] {return stage_two_inner_buffer_count > 0 || stage_two_inner_should_end; });
 
 		if (stage_two_inner_buffer_count == 0) break;
 
@@ -111,7 +113,7 @@ void stage_two_worker_thread() {
 		}
 
 		lk_empty.unlock();
-		stage_two_public_buffer_empty.notify_one();
+		stage_two_public_buffer_full.notify_one();
 	}
 
 	{
@@ -138,7 +140,7 @@ void stage_two_boss_thread() {
 		stage_one_data_change.wait(lk_one, [] {return stage_one_data != nullptr || stage_one_should_end;  });
 
 		if (stage_one_data == nullptr) break;
-	
+
 		//wait for buffer_empty in
 		std::unique_lock<std::mutex> lk_empty(stage_two_inner_buffer_protector);
 		stage_two_inner_buffer_empty.wait(lk_empty, [] {return stage_two_inner_buffer_count < STAGE2_BUFFER_SIZE; });
@@ -166,8 +168,8 @@ void stage_two_boss_thread() {
 	}
 
 
-	//propagat end condition
-	stage_two_should_end = true;
+	//propagate end condition
+	stage_two_inner_should_end = true;
 	stage_two_inner_buffer_full.notify_all();
 
 	for (size_t i = 0; i < STAGE2_WORKERS_COUNT; i++)
@@ -179,26 +181,125 @@ void stage_two_boss_thread() {
 		std::cout << std::endl;
 	}
 
+	stage_two_public_should_end = true;
+	stage_two_public_buffer_full.notify_all();
 }
 
-
+Matrix * stage_three_data = nullptr;
+std::mutex stage_three_data_protector;
+std::condition_variable stage_three_data_change;
+bool stage_three_should_end = false;
 
 void stage_three_thread() {
 
+	Matrix * current_data;
 
+	while (true) {
+		//wait for task
+		//wait for buffer_empty in
+		std::unique_lock<std::mutex> lk_full(stage_two_public_buffer_protector);
+		stage_two_public_buffer_full.wait(lk_full, [] {return stage_two_public_buffer_count > 0 || stage_two_public_should_end; });
 
+		if (stage_two_public_buffer_count == 0) break;
+
+		//take data into local memory
+		current_data = stage_two_public_buffer[stage_two_public_buffer_count - 1];
+		stage_two_public_buffer[stage_two_public_buffer_count - 1] = nullptr;
+		stage_two_public_buffer_count--;
+
+		{
+			std::lock_guard<std::mutex> cout(cout_mutex);
+			std::cout << "Stage three: Matrix with id: " << current_data->id << " has been placed OUT of buffer." << std::endl;
+			std::cout << "Stage three: Current buffer status [" << stage_two_public_buffer_count << "/" << STAGE2_PUBLIC_BUFFER_SIZE << "]" << std::endl;
+			std::cout << std::endl;
+		}
+
+		//notify boss
+		lk_full.unlock();
+		stage_two_public_buffer_empty.notify_all();
+
+		//do its job
+		current_data->solve();
+
+		//prepare for forth thread...
+		std::unique_lock<std::mutex> lk_ready(stage_three_data_protector);
+		stage_three_data_change.wait(lk_ready, [] {return stage_three_data == nullptr; });
+
+		stage_three_data = current_data;
+		current_data = nullptr;
+
+		{
+			std::lock_guard<std::mutex> cout(cout_mutex);
+			std::cout << "Stage three: Matrix with id: " << stage_three_data->id << " has been processed." << std::endl;
+			std::cout << std::endl;
+		}
+
+		lk_ready.unlock();
+		stage_three_data_change.notify_one();
+	}
+
+	stage_three_should_end = true;
+	stage_three_data_change.notify_one();
+
+	{
+		std::lock_guard<std::mutex> cout(cout_mutex);
+		std::cout << "Stage three: Thread ended." << std::endl;
+		std::cout << std::endl;
+	}
+
+}
+
+void stage_four_thread() {
+
+	Matrix * current_data;
+
+	while (true) {
+		//prepare for forth thread...
+		std::unique_lock<std::mutex> lk_ready(stage_three_data_protector);
+		stage_three_data_change.wait(lk_ready, [] {return stage_three_data != nullptr || stage_three_should_end; });
+
+		if (stage_three_data == nullptr) break;
+
+		current_data = stage_three_data;
+		stage_three_data = nullptr;
+
+		{
+			std::lock_guard<std::mutex> cout(cout_mutex);
+			std::cout << "Stage four: Matrix with id: " << current_data->id << " has been accepted." << std::endl;
+			std::cout << std::endl;
+		}
+
+		lk_ready.unlock();
+		stage_three_data_change.notify_one();
+
+		current_data->write_to_file();
+		delete current_data;
+	}
+
+	{
+		std::lock_guard<std::mutex> cout(cout_mutex);
+		std::cout << "Stage four: Thread ended. " << std::endl;
+		std::cout << std::endl;
+	}
 }
 
 
 int main()
 {
-	std::thread a(stage_two_boss_thread);
-	std::thread b(stage_one_thread);
+	namespace fs = std::experimental::filesystem;
 
+	if (fs::exists("results")) {
+		fs::remove_all("results");
+	}
 
-	a.join();
-	b.join();
+	std::thread four(stage_four_thread);
+	std::thread three(stage_three_thread);
+	std::thread two(stage_two_boss_thread);
+	std::thread one(stage_one_thread);
 
-
+	one.join();
+	two.join();
+	three.join();
+	four.join();
 }
 
